@@ -19,13 +19,15 @@ st.set_page_config(
 st.title("🛒 Walmart Sales Dashboard")
 
 # -------------------------
-# SAFE LOAD DATA
+# LOAD DATA (FIXED)
 # -------------------------
 @st.cache_data
 def load_data():
     try:
-        df_full  = pd.read_csv("walmart_features.csv", parse_dates=["Date"])
-        results  = pd.read_csv("test_results.csv", parse_dates=["Date"])
+        # ✅ USE Walmart.csv (your available file)
+        df_full  = pd.read_csv("Walmart.csv", parse_dates=["Date"])
+        results  = pd.read_csv("test_results.csv")
+
         model    = joblib.load("walmart_model.pkl")
 
         try:
@@ -43,17 +45,14 @@ def load_data():
 df_full, results, model, features = load_data()
 
 # -------------------------
-# CLEAN DATA
+# CLEAN DATA (IMPORTANT FIX)
 # -------------------------
 df_full.columns = df_full.columns.str.strip()
 results.columns = results.columns.str.strip()
 
-# Fix missing columns
-required_cols = ["Store", "Weekly_Sales"]
-for col in required_cols:
-    if col not in df_full.columns:
-        st.error(f"❌ Missing column: {col}")
-        st.stop()
+# Ensure Date format
+if "Date" in df_full.columns:
+    df_full["Date"] = pd.to_datetime(df_full["Date"])
 
 # Add Error %
 if "Error_Pct" not in results.columns and "Actual" in results.columns:
@@ -62,10 +61,6 @@ if "Error_Pct" not in results.columns and "Actual" in results.columns:
 # Add month
 if "month" not in results.columns and "Date" in results.columns:
     results["month"] = pd.to_datetime(results["Date"]).dt.month
-
-# Bias
-if "Bias" in results.columns:
-    results["Bias_Dir"] = results["Bias"].apply(lambda x: "Over" if x > 0 else "Under")
 
 # -------------------------
 # SIDEBAR
@@ -92,17 +87,17 @@ if page == "Dashboard":
     col1.metric("Total Sales", f"${filtered_df['Weekly_Sales'].sum():,.0f}")
     col2.metric("Average Sales", f"${filtered_df['Weekly_Sales'].mean():,.0f}")
 
-    st.subheader("Sales Trend")
+    st.subheader("📈 Sales Trend")
     fig = px.line(filtered_df, x="Date", y="Weekly_Sales")
     st.plotly_chart(fig, use_container_width=True)
 
     if "Temperature" in df_full.columns:
-        st.subheader("Temperature vs Sales")
+        st.subheader("🌡 Temperature vs Sales")
         fig2 = px.scatter(filtered_df, x="Temperature", y="Weekly_Sales")
         st.plotly_chart(fig2, use_container_width=True)
 
     if "Actual" in results.columns:
-        st.subheader("Actual vs Predicted")
+        st.subheader("📊 Actual vs Predicted")
         fig3 = px.scatter(results, x="Actual", y="Predicted")
         st.plotly_chart(fig3, use_container_width=True)
 
@@ -118,6 +113,7 @@ elif page == "Error Analysis":
     st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Error by Month")
+
     month_err = results.groupby("month")["Error_Pct"].mean()
     fig2 = px.bar(x=month_err.index, y=month_err.values)
     st.plotly_chart(fig2, use_container_width=True)
@@ -159,7 +155,7 @@ elif page == "Store Deep Dive":
 # -------------------------
 elif page == "Predictor":
 
-    st.subheader("Make Prediction")
+    st.subheader("🔮 Predict Sales")
 
     store = st.selectbox("Store", sorted(df_full["Store"].unique()))
     temp = st.slider("Temperature", 10.0, 110.0, 60.0)
@@ -172,7 +168,7 @@ elif page == "Predictor":
                 "Temperature": temp
             }])
 
-            # If features exist → align
+            # Align features if exists
             if features:
                 for f in features:
                     if f not in input_df.columns:
