@@ -4,75 +4,74 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import joblib
+import os
 import warnings
 warnings.filterwarnings('ignore')
 
-# -------------------------
-# PAGE CONFIG
-# -------------------------
-st.set_page_config(
-    page_title="Walmart Sales Dashboard",
-    page_icon="🛒",
-    layout="wide"
-)
-
-st.title("🛒 Walmart Sales Dashboard")
+st.set_page_config(page_title="Walmart Dashboard", layout="wide")
 
 # -------------------------
-# LOAD DATA (FIXED)
+# LOAD DATA (SAFE VERSION)
 # -------------------------
 @st.cache_data
 def load_data():
     try:
-        # ✅ USE Walmart.csv (your available file)
-        df_full  = pd.read_csv("Walmart.csv", parse_dates=["Date"])
-        results  = pd.read_csv("test_results.csv")
+        # Try main file
+        if os.path.exists("walmart_features.csv"):
+            df_full = pd.read_csv("walmart_features.csv")
+        else:
+            df_full = pd.read_csv("Walmart.csv")
 
-        model    = joblib.load("walmart_model.pkl")
+        results = pd.read_csv("test_results.csv")
 
-        try:
-            features = joblib.load("walmart_features.pkl")
-        except:
-            features = None
+        model = joblib.load("walmart_model.pkl")
+        features = joblib.load("walmart_features.pkl")
 
         return df_full, results, model, features
 
     except Exception as e:
-        st.error("❌ File loading error")
-        st.write(e)
+        st.error(f"File loading error: {e}")
         st.stop()
 
 df_full, results, model, features = load_data()
 
 # -------------------------
-# CLEAN DATA (IMPORTANT FIX)
+# CLEAN DATA (VERY IMPORTANT)
 # -------------------------
-df_full.columns = df_full.columns.str.strip()
-results.columns = results.columns.str.strip()
+df_full.columns = df_full.columns.str.strip().str.replace(" ", "_")
+results.columns = results.columns.str.strip().str.replace(" ", "_")
 
-# Ensure Date format
+# SAFE DATE CONVERSION ✅
 if "Date" in df_full.columns:
-    df_full["Date"] = pd.to_datetime(df_full["Date"])
+    df_full["Date"] = pd.to_datetime(df_full["Date"], errors="coerce")
+    df_full = df_full.dropna(subset=["Date"])
 
-# Add Error %
+if "Date" in results.columns:
+    results["Date"] = pd.to_datetime(results["Date"], errors="coerce")
+    results = results.dropna(subset=["Date"])
+
+# ADD MISSING COLUMNS SAFELY
 if "Error_Pct" not in results.columns and "Actual" in results.columns:
     results["Error_Pct"] = abs(results["Actual"] - results["Predicted"]) / results["Actual"] * 100
 
-# Add month
-if "month" not in results.columns and "Date" in results.columns:
-    results["month"] = pd.to_datetime(results["Date"]).dt.month
+if "Bias" not in results.columns:
+    results["Bias"] = results["Predicted"] - results["Actual"]
+
+if "Bias_Dir" not in results.columns:
+    results["Bias_Dir"] = results["Bias"].apply(lambda x: "Over" if x > 0 else "Under")
+
+if "month" not in results.columns:
+    results["month"] = results["Date"].dt.month
 
 # -------------------------
 # SIDEBAR
 # -------------------------
-st.sidebar.title("Navigation")
+st.sidebar.title("🛒 Walmart App")
 
-page = st.sidebar.radio("Go to", [
+page = st.sidebar.radio("Navigate", [
     "Dashboard",
     "Error Analysis",
-    "Heatmap",
-    "Store Deep Dive",
-    "Predictor"
+    "Live Predictor"
 ])
 
 # -------------------------
@@ -80,25 +79,29 @@ page = st.sidebar.radio("Go to", [
 # -------------------------
 if page == "Dashboard":
 
+    st.title("📊 Walmart Sales Dashboard")
+
     store = st.selectbox("Select Store", sorted(df_full["Store"].unique()))
     filtered_df = df_full[df_full["Store"] == store]
 
-    col1, col2 = st.columns(2)
-    col1.metric("Total Sales", f"${filtered_df['Weekly_Sales'].sum():,.0f}")
-    col2.metric("Average Sales", f"${filtered_df['Weekly_Sales'].mean():,.0f}")
-
-    st.subheader("📈 Sales Trend")
+    st.subheader("Sales Trend")
     fig = px.line(filtered_df, x="Date", y="Weekly_Sales")
     st.plotly_chart(fig, use_container_width=True)
 
-    if "Temperature" in df_full.columns:
-        st.subheader("🌡 Temperature vs Sales")
+    if "Temperature" in filtered_df.columns:
+        st.subheader("Temperature vs Sales")
         fig2 = px.scatter(filtered_df, x="Temperature", y="Weekly_Sales")
         st.plotly_chart(fig2, use_container_width=True)
 
-    if "Actual" in results.columns:
-        st.subheader("📊 Actual vs Predicted")
-        fig3 = px.scatter(results, x="Actual", y="Predicted")
+    st.subheader("Actual vs Predicted")
+
+    if "Actual" in results.columns and "Predicted" in results.columns:
+        fig3 = px.scatter(
+            results,
+            x="Actual",
+            y="Predicted",
+            color="Error_Pct"
+        )
         st.plotly_chart(fig3, use_container_width=True)
 
 # -------------------------
@@ -106,79 +109,48 @@ if page == "Dashboard":
 # -------------------------
 elif page == "Error Analysis":
 
-    st.subheader("Error by Store")
+    st.title("🔍 Error Analysis")
 
-    store_err = results.groupby("Store")["Error_Pct"].mean()
-    fig = px.bar(x=store_err.index, y=store_err.values)
+    store_err = results.groupby("Store")["Error_Pct"].mean().reset_index()
+
+    fig = px.bar(store_err, x="Store", y="Error_Pct")
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Error by Month")
-
-    month_err = results.groupby("month")["Error_Pct"].mean()
-    fig2 = px.bar(x=month_err.index, y=month_err.values)
-    st.plotly_chart(fig2, use_container_width=True)
+    st.subheader("High Error Rows")
+    high = results[results["Error_Pct"] > 10]
+    st.dataframe(high)
 
 # -------------------------
-# HEATMAP
+# LIVE PREDICTOR
 # -------------------------
-elif page == "Heatmap":
+elif page == "Live Predictor":
 
-    import matplotlib.pyplot as plt
-    import seaborn as sns
+    st.title("🔮 Sales Predictor")
 
-    pivot = results.pivot_table(
-        index="Store",
-        columns="month",
-        values="Error_Pct",
-        aggfunc="mean"
-    )
-
-    fig, ax = plt.subplots()
-    sns.heatmap(pivot, annot=True, cmap="RdYlGn_r")
-    st.pyplot(fig)
-
-# -------------------------
-# STORE DEEP DIVE
-# -------------------------
-elif page == "Store Deep Dive":
-
-    store = st.selectbox("Select Store", sorted(results["Store"].unique()))
-    sd = results[results["Store"] == store]
-
-    st.metric("Store Error", f"{sd['Error_Pct'].mean():.2f}%")
-
-    fig = px.line(sd, x="Date", y="Actual")
-    st.plotly_chart(fig, use_container_width=True)
-
-# -------------------------
-# PREDICTOR
-# -------------------------
-elif page == "Predictor":
-
-    st.subheader("🔮 Predict Sales")
-
-    store = st.selectbox("Store", sorted(df_full["Store"].unique()))
-    temp = st.slider("Temperature", 10.0, 110.0, 60.0)
+    store = st.number_input("Store", 1, 45, 1)
+    temperature = st.slider("Temperature", 0.0, 120.0, 70.0)
+    fuel_price = st.slider("Fuel Price", 1.0, 5.0, 3.0)
+    cpi = st.slider("CPI", 100.0, 300.0, 200.0)
+    unemployment = st.slider("Unemployment", 1.0, 15.0, 7.0)
 
     if st.button("Predict"):
 
-        try:
-            input_df = pd.DataFrame([{
-                "Store": store,
-                "Temperature": temp
-            }])
+        row = {
+            "Store": store,
+            "Temperature": temperature,
+            "Fuel_Price": fuel_price,
+            "CPI": cpi,
+            "Unemployment": unemployment
+        }
 
-            # Align features if exists
-            if features:
-                for f in features:
-                    if f not in input_df.columns:
-                        input_df[f] = 0
-                input_df = input_df[features]
+        input_df = pd.DataFrame([row])
 
-            pred = model.predict(input_df)[0]
+        for f in features:
+            if f not in input_df.columns:
+                input_df[f] = 0
 
-            st.success(f"Predicted Sales: ${pred:,.0f}")
+        input_df = input_df[features]
 
-        except Exception as e:
-            st.error("Prediction failed")
-            st.write(e)
+        pred = model.predict(input_df)[0]
+
+        st.success(f"Predicted Sales: ${pred:,.0f}")
