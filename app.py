@@ -3,39 +3,52 @@ import pandas as pd
 import plotly.express as px
 import pickle
 
-# Page config
-st.set_page_config(page_title="Walmart Sales Forecast", layout="wide")
+# ---------------------------
+# PAGE CONFIG
+# ---------------------------
+st.set_page_config(page_title="Walmart Sales Dashboard", layout="wide")
 
-st.title("📊 Walmart Weekly Sales Forecast Dashboard")
+st.title("📊 Walmart Weekly Sales Dashboard")
 
 # ---------------------------
 # LOAD DATA
 # ---------------------------
 @st.cache_data
 def load_data():
-    # Load dataset (FIXED: using .pkl instead of .csv)
-    df_full = pd.read_pickle("walmart_features.pkl")
+    # Load main dataset (FIXED: using your csv)
+    df_full = pd.read_csv("Walmart.csv", parse_dates=["Date"])
     
-    # Load test results
-    results = pd.read_csv("test_results.csv")
-    
-    # Load trained model
-    with open("walmart_model.pkl", "rb") as f:
-        model = pickle.load(f)
-    
+    # Clean column names (IMPORTANT FIX)
+    df_full.columns = df_full.columns.str.strip().str.title()
+
+    # Load predictions (optional)
+    try:
+        results = pd.read_csv("test_results.csv")
+    except:
+        results = None
+
+    # Load model (optional)
+    try:
+        with open("walmart_model.pkl", "rb") as f:
+            model = pickle.load(f)
+    except:
+        model = None
+
     return df_full, results, model
 
 df_full, results, model = load_data()
 
 # ---------------------------
-# SIDEBAR FILTERS
+# SIDEBAR FILTER
 # ---------------------------
 st.sidebar.header("Filters")
 
-store = st.sidebar.selectbox("Select Store", sorted(df_full["Store"].unique()))
-dept = st.sidebar.selectbox("Select Dept", sorted(df_full["Dept"].unique()))
+store = st.sidebar.selectbox(
+    "Select Store",
+    sorted(df_full["Store"].unique())
+)
 
-filtered_df = df_full[(df_full["Store"] == store) & (df_full["Dept"] == dept)]
+filtered_df = df_full[df_full["Store"] == store]
 
 # ---------------------------
 # KPI SECTION
@@ -50,37 +63,60 @@ col2.metric("Average Sales", f"{filtered_df['Weekly_Sales'].mean():,.0f}")
 # ---------------------------
 # SALES TREND
 # ---------------------------
-st.subheader("📈 Sales Trend")
+st.subheader("📈 Weekly Sales Trend")
 
 fig = px.line(
     filtered_df,
     x="Date",
     y="Weekly_Sales",
-    title="Weekly Sales Over Time"
+    title=f"Store {store} Sales Over Time"
 )
 
 st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------
+# ADDITIONAL INSIGHTS
+# ---------------------------
+st.subheader("🌡️ Temperature vs Sales")
+
+fig2 = px.scatter(
+    filtered_df,
+    x="Temperature",
+    y="Weekly_Sales",
+    title="Impact of Temperature on Sales"
+)
+
+st.plotly_chart(fig2, use_container_width=True)
+
+# ---------------------------
 # PREDICTION VS ACTUAL
 # ---------------------------
-st.subheader("📊 Actual vs Predicted")
+if results is not None and "Predicted" in results.columns:
+    st.subheader("📊 Actual vs Predicted")
 
-if "Predicted" in results.columns:
-    fig2 = px.scatter(
+    fig3 = px.scatter(
         results,
         x="Weekly_Sales",
         y="Predicted",
         title="Actual vs Predicted Sales"
     )
-    st.plotly_chart(fig2, use_container_width=True)
-else:
-    st.warning("⚠️ 'Predicted' column not found in test_results.csv")
+
+    st.plotly_chart(fig3, use_container_width=True)
 
 # ---------------------------
 # MODEL INFO
 # ---------------------------
 st.subheader("🤖 Model Info")
 
-st.write("Model loaded successfully ✅")
-st.write(type(model))
+if model is not None:
+    st.success("Model loaded successfully ✅")
+    st.write(type(model))
+else:
+    st.warning("Model not loaded")
+
+# ---------------------------
+# RAW DATA VIEW
+# ---------------------------
+st.subheader("📂 Raw Data")
+
+st.dataframe(filtered_df.head())
