@@ -26,69 +26,60 @@ def mape(y_true, y_pred):
 
 
 # =========================
-# LOAD DATA (SAFE VERSION)
+# LOAD DATA (FIXED FOR YOUR FILES)
 # =========================
 @st.cache_data
 def load_data():
-    try:
-        base_path = os.path.dirname(__file__)
+    base_path = os.path.dirname(__file__)
 
-        def safe_read(file):
-            path = os.path.join(base_path, file)
-            if os.path.exists(path):
-                return pd.read_csv(path)
-            else:
-                st.error(f"❌ Missing file: {file}")
-                st.stop()
+    def safe_read(file):
+        path = os.path.join(base_path, file)
+        if os.path.exists(path):
+            return pd.read_csv(path)
+        else:
+            st.error(f"❌ Missing file: {file}")
+            st.stop()
 
-        df_full = safe_read("walmart_features.csv")
-        results = safe_read("test_results.csv")
+    # ✅ FIXED HERE (use Walmart.csv)
+    df_full = safe_read("Walmart.csv")
+    results = safe_read("test_results.csv")
 
-        # ---- DATE FIX ----
-        if "Date" in df_full.columns:
-            df_full["Date"] = pd.to_datetime(df_full["Date"], errors="coerce")
+    # DATE FIX
+    if "Date" in df_full.columns:
+        df_full["Date"] = pd.to_datetime(df_full["Date"], errors="coerce")
 
-        if "Date" in results.columns:
-            results["Date"] = pd.to_datetime(results["Date"], errors="coerce")
+    if "Date" in results.columns:
+        results["Date"] = pd.to_datetime(results["Date"], errors="coerce")
 
-        # ---- MODEL ----
-        model = None
-        if os.path.exists(os.path.join(base_path, "walmart_model.pkl")):
-            model = joblib.load(os.path.join(base_path, "walmart_model.pkl"))
+    # MODEL
+    model = None
+    if os.path.exists(os.path.join(base_path, "walmart_model.pkl")):
+        model = joblib.load(os.path.join(base_path, "walmart_model.pkl"))
 
-        # ---- FEATURES ----
-        features = None
-        if os.path.exists(os.path.join(base_path, "walmart_features.pkl")):
-            features = joblib.load(os.path.join(base_path, "walmart_features.pkl"))
+    # FEATURES
+    features = None
+    if os.path.exists(os.path.join(base_path, "walmart_features.pkl")):
+        features = joblib.load(os.path.join(base_path, "walmart_features.pkl"))
 
-        return df_full, results, model, features
-
-    except Exception as e:
-        st.error("❌ File loading error")
-        st.write(e)
-        st.stop()
+    return df_full, results, model, features
 
 
 df_full, results, model, features = load_data()
 
 # =========================
-# CLEAN DATA
+# CLEANING
 # =========================
 df_full.columns = df_full.columns.str.strip()
 results.columns = results.columns.str.strip()
 
 if "Error_Pct" not in results.columns and "Actual" in results.columns:
-    results["Error_Pct"] = (
-        abs(results["Actual"] - results["Predicted"]) / results["Actual"] * 100
-    )
+    results["Error_Pct"] = abs(results["Actual"] - results["Predicted"]) / results["Actual"] * 100
 
 if "month" not in results.columns and "Date" in results.columns:
     results["month"] = results["Date"].dt.month
 
 if "Bias" in results.columns:
-    results["Bias_Dir"] = results["Bias"].apply(
-        lambda x: "Over" if x > 0 else "Under"
-    )
+    results["Bias_Dir"] = results["Bias"].apply(lambda x: "Over" if x > 0 else "Under")
 
 # =========================
 # SIDEBAR
@@ -100,8 +91,8 @@ page = st.sidebar.radio("Navigate", [
     "🔍 Error Analysis",
     "🗺️ Error Heatmap",
     "🏪 Store Deep Dive",
-    "📈 Monitoring",
-    "🔮 Live Predictor"
+    "📈 Step 8 Monitoring",
+    "🔮 Step 7 Live Predictor"
 ])
 
 # =========================
@@ -111,27 +102,20 @@ if page == "📊 Dashboard":
 
     st.title("📊 Walmart Sales Dashboard")
 
-    if "Store" not in df_full.columns:
-        st.error("Missing 'Store' column")
-        st.stop()
-
     store = st.selectbox("Select Store", sorted(df_full["Store"].unique()))
     df = df_full[df_full["Store"] == store]
 
-    st.subheader("Sales Trend")
+    st.metric("Total Sales", f"${df['Weekly_Sales'].sum():,.0f}")
+    st.metric("Avg Weekly Sales", f"${df['Weekly_Sales'].mean():,.0f}")
 
-    if "Date" in df.columns and "Weekly_Sales" in df.columns:
-        fig = px.line(df, x="Date", y="Weekly_Sales")
-        st.plotly_chart(fig, use_container_width=True)
+    fig = px.line(df, x="Date", y="Weekly_Sales", title="Sales Trend")
+    st.plotly_chart(fig, use_container_width=True)
 
     if "Temperature" in df.columns:
-        st.subheader("Temperature vs Sales")
-        fig2 = px.scatter(df, x="Temperature", y="Weekly_Sales")
+        fig2 = px.scatter(df, x="Temperature", y="Weekly_Sales", title="Temp vs Sales")
         st.plotly_chart(fig2, use_container_width=True)
 
-    st.subheader("Raw Data")
     st.dataframe(df.head(20))
-
 
 # =========================
 # ERROR ANALYSIS
@@ -144,29 +128,23 @@ elif page == "🔍 Error Analysis":
     st.plotly_chart(fig, use_container_width=True)
 
     high = results[results["Error_Pct"] > 10]
-    st.subheader("High Error Rows (>10%)")
     st.dataframe(high)
-
 
 # =========================
 # HEATMAP
 # =========================
 elif page == "🗺️ Error Heatmap":
 
-    st.title("🗺️ Error Heatmap")
-
     import seaborn as sns
     import matplotlib.pyplot as plt
 
-    pivot = results.pivot_table(
-        index="Store", columns="month",
-        values="Error_Pct", aggfunc="mean"
-    ).fillna(0)
+    st.title("🗺️ Error Heatmap")
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    sns.heatmap(pivot, cmap="RdYlGn_r", annot=True, fmt=".1f", ax=ax)
+    pivot = results.pivot_table(index="Store", columns="month", values="Error_Pct", aggfunc="mean")
+
+    fig, ax = plt.subplots(figsize=(12,6))
+    sns.heatmap(pivot, annot=True, cmap="RdYlGn_r", fmt=".1f", ax=ax)
     st.pyplot(fig)
-
 
 # =========================
 # STORE DEEP DIVE
@@ -183,13 +161,12 @@ elif page == "🏪 Store Deep Dive":
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=sd["Date"], y=sd["Actual"], name="Actual"))
     fig.add_trace(go.Scatter(x=sd["Date"], y=sd["Predicted"], name="Predicted"))
-    st.plotly_chart(fig, use_container_width=True)
-
+    st.plotly_chart(fig)
 
 # =========================
-# MONITORING
+# STEP 8 MONITORING
 # =========================
-elif page == "📈 Monitoring":
+elif page == "📈 Step 8 Monitoring":
 
     st.title("📈 Model Monitoring")
 
@@ -202,13 +179,12 @@ elif page == "📈 Monitoring":
     monthly.columns = ["Month", "MAPE"]
 
     fig = px.line(monthly, x="Month", y="MAPE", markers=True)
-    st.plotly_chart(fig, use_container_width=True)
-
+    st.plotly_chart(fig)
 
 # =========================
-# LIVE PREDICTOR
+# STEP 7 PREDICTOR
 # =========================
-elif page == "🔮 Live Predictor":
+elif page == "🔮 Step 7 Live Predictor":
 
     st.title("🔮 Sales Predictor")
 
