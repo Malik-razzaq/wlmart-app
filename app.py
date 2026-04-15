@@ -14,30 +14,24 @@ st.set_page_config(
     layout="wide"
 )
 
-# -------------------------
-# SAFE MAPE
-# -------------------------
 def mape(y_true, y_pred):
     return mean_absolute_percentage_error(y_true, y_pred) * 100
 
-# -------------------------
-# LOAD DATA (FIXED)
-# -------------------------
+# =========================
+# LOAD DATA (FIXED ONLY HERE)
+# =========================
 @st.cache_data
 def load_data():
     try:
-        # ✅ FIXED FILE NAME
-        df_full = pd.read_csv("Walmart.csv")
+        # Try original file
+        try:
+            df_full = pd.read_csv("walmart_features.csv", parse_dates=["Date"])
+        except:
+            # Fallback to your actual file
+            df_full = pd.read_csv("Walmart.csv", parse_dates=["Date"])
 
-        # ✅ SAFE DATE PARSING
-        if "Date" in df_full.columns:
-            df_full["Date"] = pd.to_datetime(df_full["Date"], errors="coerce")
-
-        results = pd.read_csv("test_results.csv")
-        if "Date" in results.columns:
-            results["Date"] = pd.to_datetime(results["Date"], errors="coerce")
-
-        model = joblib.load("walmart_model.pkl")
+        results  = pd.read_csv("test_results.csv", parse_dates=["Date"])
+        model    = joblib.load("walmart_model.pkl")
 
         try:
             features = joblib.load("walmart_features.pkl")
@@ -47,38 +41,39 @@ def load_data():
         return df_full, results, model, features
 
     except Exception as e:
-        st.error("❌ File loading error")
+        st.error("File loading error")
         st.write(e)
         st.stop()
 
 df_full, results, model, features = load_data()
 
-# -------------------------
+# =========================
 # CLEAN DATA
-# -------------------------
+# =========================
 df_full.columns = df_full.columns.str.strip()
 results.columns = results.columns.str.strip()
 
-# Error %
 if "Error_Pct" not in results.columns and "Actual" in results.columns:
     results["Error_Pct"] = (
-        abs(results["Actual"] - results["Predicted"]) /
-        (results["Actual"] + 1e-6) * 100
+        abs(results["Actual"] - results["Predicted"]) / results["Actual"] * 100
     )
 
-# Month
 if "month" not in results.columns and "Date" in results.columns:
-    results["month"] = results["Date"].dt.month
+    results["month"] = pd.to_datetime(results["Date"]).dt.month
 
-# Bias
 if "Bias" in results.columns:
     results["Bias_Dir"] = results["Bias"].apply(
         lambda x: "Over" if x > 0 else "Under"
     )
 
-# -------------------------
+try:
+    model.set_params(verbose=-1)
+except:
+    pass
+
+# =========================
 # SIDEBAR
-# -------------------------
+# =========================
 st.sidebar.title("Walmart Forecast")
 st.sidebar.markdown("**Model:** LightGBM V2")
 st.sidebar.markdown("**MAPE:** 4.43%")
@@ -99,60 +94,54 @@ page = st.sidebar.radio("Navigate", [
 # DASHBOARD
 # =========================
 if page == "Dashboard":
-
     st.title("Walmart Weekly Sales Forecasting")
+    st.caption("LightGBM V2 | 45 Stores | Feb 2010 to Oct 2012")
+    st.divider()
 
-    if "Store" not in df_full.columns:
-        st.error("Column 'Store' not found in dataset")
-        st.stop()
+    c1,c2,c3,c4,c5 = st.columns(5)
+    c1.metric("MAPE", "4.43%", "Goal < 5%")
+    c2.metric("R2 Score", "0.9809", "Goal > 0.95")
+    c3.metric("RMSE", "$55,667")
+    c4.metric("Below 10% Error", "93.7%")
+    c5.metric("High Error Rows", "6.3%")
 
     store_filter = st.selectbox(
         "Select Store",
-        sorted(df_full["Store"].dropna().unique())
+        sorted(df_full["Store"].unique())
     )
-
     filtered_df = df_full[df_full["Store"] == store_filter]
 
     st.metric("Total Sales", f"${filtered_df['Weekly_Sales'].sum():,.0f}")
 
-    # Trend
-    if "Date" in filtered_df.columns:
-        fig = px.line(filtered_df, x="Date", y="Weekly_Sales")
-        st.plotly_chart(fig, use_container_width=True)
+    fig = px.line(filtered_df, x="Date", y="Weekly_Sales")
+    st.plotly_chart(fig, use_container_width=True)
 
 # =========================
 # ERROR ANALYSIS
 # =========================
 elif page == "Error Analysis":
-
     st.title("Error Analysis")
 
-    if "Store" in results.columns:
-        store_err = results.groupby("Store")["Error_Pct"].mean()
-        st.bar_chart(store_err)
+    store_err = results.groupby("Store")["Error_Pct"].mean()
+    st.bar_chart(store_err)
 
 # =========================
 # HEATMAP
 # =========================
 elif page == "Error Heatmap":
-
     st.title("Error Heatmap")
 
-    if "Store" in results.columns and "month" in results.columns:
-        pivot = results.pivot_table(
-            index="Store",
-            columns="month",
-            values="Error_Pct",
-            aggfunc="mean"
-        )
+    pivot = results.pivot_table(
+        index="Store", columns="month",
+        values="Error_Pct", aggfunc="mean"
+    )
 
-        st.dataframe(pivot)
+    st.dataframe(pivot)
 
 # =========================
 # STORE DEEP DIVE
 # =========================
 elif page == "Store Deep Dive":
-
     st.title("Store Deep Dive")
 
     store = st.selectbox("Store", sorted(results["Store"].unique()))
@@ -161,29 +150,26 @@ elif page == "Store Deep Dive":
     st.metric("MAPE", f"{sd['Error_Pct'].mean():.2f}%")
 
 # =========================
-# STEP 8 MONITORING
+# STEP 8 — MONITORING
 # =========================
 elif page == "Step 8 — Monitoring":
-
     st.title("Model Monitoring")
 
-    if "Date" in results.columns:
-        results["month_year"] = results["Date"].dt.to_period("M").astype(str)
+    results["month_year"] = results["Date"].dt.to_period("M").astype(str)
 
-        monthly = results.groupby("month_year").apply(
-            lambda g: mape(g["Actual"], g["Predicted"])
-        ).reset_index()
+    monthly = results.groupby("month_year").apply(
+        lambda g: mape(g["Actual"], g["Predicted"])
+    ).reset_index()
 
-        monthly.columns = ["Month", "MAPE"]
+    monthly.columns = ["Month", "MAPE"]
 
-        fig = px.line(monthly, x="Month", y="MAPE")
-        st.plotly_chart(fig)
+    fig = px.line(monthly, x="Month", y="MAPE")
+    st.plotly_chart(fig)
 
 # =========================
-# STEP 7 PREDICTOR
+# STEP 7 — LIVE PREDICTOR
 # =========================
 elif page == "Step 7 — Live Predictor":
-
     st.title("Live Predictor")
 
     store = st.selectbox("Store", list(range(1, 46)))
@@ -206,7 +192,7 @@ elif page == "Step 7 — Live Predictor":
             "lag_52": lag52
         }])
 
-        if features:
+        if features is not None:
             for f in features:
                 if f not in row.columns:
                     row[f] = 0
