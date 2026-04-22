@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -83,7 +82,6 @@ st.sidebar.markdown("**WMAE:** $35,357")
 st.sidebar.markdown("**R2:** 0.9809")
 st.sidebar.markdown("**Stores:** 45")
 st.sidebar.markdown("**Features:** 37 engineered")
-st.sidebar.markdown("**Dataset:** Public Walmart dataset")
 st.sidebar.divider()
 
 page = st.sidebar.radio("Navigate", [
@@ -185,7 +183,7 @@ if page == "Dashboard":
     col1, col2, col3 = st.columns(3)
     col1.success("62.9% of predictions below 5% error")
     col2.success("93.7% of predictions below 10% error")
-    col3.warning("6.3% above 10% — concentrated in 4 stores")
+    col3.warning("6.3% above 10% error concentrated in 4 stores")
 
     st.subheader("Raw Data")
     st.dataframe(filtered_df.head(20), use_container_width=True)
@@ -242,23 +240,23 @@ elif page == "Error Analysis":
         "Avg Error" : ["6.09%","5.44%","4.36%","4.36%"],
         "Avg Sales" : ["$1.55M","$570K","$622K","$314K"],
         "Root Cause": [
-            "$1.3M swing — peaks unpredictable",
+            "1.3M swing peaks unpredictable",
             "Systematic under-prediction year-round",
             "Unique summer overestimation Jul-Oct",
-            "Smallest store — low dollar inflates percent"
+            "Smallest store low dollar inflates percent"
         ]
     })
     st.dataframe(root, use_container_width=True)
     st.warning(
-        "4 stores = 82.1% of all high-error rows. "
-        "Errors are store-specific — not holiday-driven."
+        "4 stores account for 82.1% of all high-error rows. "
+        "Errors are store-specific not holiday-driven."
     )
 
 elif page == "Error Heatmap":
     import seaborn as sns
     import matplotlib.pyplot as plt
 
-    st.title("Error Heatmap — Store x Month")
+    st.title("Error Heatmap Store x Month")
     st.divider()
 
     pivot = results.pivot_table(
@@ -281,7 +279,7 @@ elif page == "Error Heatmap":
     worst_month = results.groupby("month")["Error_Pct"].mean().idxmax()
     best_month  = results.groupby("month")["Error_Pct"].mean().idxmin()
     col1.metric("Worst Store", f"Store {worst_store}")
-    col2.metric("Worst Month", f"Month {worst_month} December")
+    col2.metric("Worst Month", f"Month {worst_month}")
     col3.metric("Best Month",  f"Month {best_month}")
 
 elif page == "Store Deep Dive":
@@ -332,7 +330,7 @@ elif page == "Store Deep Dive":
         st.success(f"Store {store} has no predictions above 10% error")
 
 elif page == "Step 8 Monitoring":
-    st.title("Step 8 — Model Monitoring and Maintenance")
+    st.title("Step 8 Model Monitoring and Maintenance")
     st.divider()
 
     st.subheader("Monthly MAPE Tracking")
@@ -358,12 +356,12 @@ elif page == "Step 8 Monitoring":
         st.success("0 of 21 months exceeded 8% alert — model is healthy")
 
     st.divider()
-    st.subheader("WMAE — Kaggle Competition Metric")
+    st.subheader("WMAE Kaggle Competition Metric")
     st.info(
         "WMAE (Weighted Mean Absolute Error) is the official Walmart "
         "Kaggle competition metric. Holiday weeks receive 5x weight. "
         "Calculated on our own test split for internal evaluation only. "
-        "Our WMAE: $35,357 on 15% holdout split."
+        "Our WMAE is 35357 on 15% holdout split."
     )
 
     holiday_col = "Holiday_Flag" if "Holiday_Flag" in results.columns \
@@ -393,10 +391,10 @@ elif page == "Step 8 Monitoring":
 
         wmae_df = pd.DataFrame({
             "Metric" : [
-                "WMAE (our 15% test split)",
-                "MAE (unweighted)",
+                "WMAE our 15% test split",
+                "MAE unweighted",
                 "MAPE",
-                "Kaggle top WMAE (approx)"
+                "Kaggle top WMAE approx"
             ],
             "Value"  : [
                 f"${wmae_score:,.0f}",
@@ -405,36 +403,36 @@ elif page == "Step 8 Monitoring":
                 "~$1,500 to $2,500"
             ],
             "Notes"  : [
-                "5x holiday weighting — matches Kaggle rule",
+                "5x holiday weighting matches Kaggle rule",
                 "Equal weight baseline",
                 "Interpretable business metric",
-                "On private test set — not directly comparable"
+                "On private test set not directly comparable"
             ]
         })
         st.dataframe(wmae_df, use_container_width=True)
         st.warning(
-            "Gap to Kaggle top scores is due to missing promotion, "
+            "Gap to Kaggle top scores is due to missing promotion "
             "markdown and store-type data not in this public dataset. "
-            "Not directly comparable — Kaggle used a different private test set."
+            "Not directly comparable as Kaggle used a different private test set."
         )
     else:
         st.warning("Holiday column not found — WMAE cannot be calculated")
 
     st.divider()
-    st.subheader("Benchmark Comparison (MAPE)")
+    st.subheader("Benchmark Comparison MAPE")
     benchmark = pd.DataFrame({
         "Model"   : [
-            "Naive Baseline (last week sales)",
-            "Random Forest + raw features",
-            "LightGBM V2 (this project)",
-            "Best public notebooks (MAPE est.)",
+            "Naive Baseline last week sales",
+            "Random Forest raw features",
+            "LightGBM V2 this project",
+            "Best public notebooks MAPE est",
         ],
         "MAPE"    : ["~18%","9.17%","4.03%","~2-3%"],
         "Features": [
             "None",
             "8 raw features",
             "37 engineered features",
-            "Includes promotion + markdown data"
+            "Includes promotion and markdown data"
         ],
         "Notes"   : [
             "Baseline to beat",
@@ -445,14 +443,8 @@ elif page == "Step 8 Monitoring":
     })
     st.dataframe(benchmark, use_container_width=True)
     st.info(
-        "Industry Note: The original Walmart Kaggle competition uses WMAE. "
-        "This project uses MAPE for interpretability and also reports WMAE "
-        "for competition alignment. Model beats naive baseline by 74.5% "
-        "and RF baseline by 51.8%."
-    )
-    st.warning(
-        "Gap to top notebooks is due to missing promotion and "
-        "store-type data — not model weakness."
+        "Model beats naive baseline by 74.5% and RF baseline by 51.8%. "
+        "Gap to top notebooks is due to missing data not model weakness."
     )
 
     st.divider()
@@ -493,25 +485,31 @@ elif page == "Step 8 Monitoring":
     schedule = pd.DataFrame({
         "Trigger"  : ["Scheduled","Performance","Drift","Emergency"],
         "Frequency": ["Monthly","On alert","Quarterly","Immediate"],
-        "Condition": ["Every 4 weeks","Live MAPE > 8%",
-                      "Feature drift > 10%","Fuel spike or new store"],
-        "Action"   : ["Append data + retrain + validate",
-                      "Retrain + redeploy immediately",
-                      "Review features + retrain",
-                      "Manual review + targeted retrain"]
+        "Condition": [
+            "Every 4 weeks",
+            "Live MAPE above 8%",
+            "Feature drift above 10%",
+            "Fuel spike or new store"
+        ],
+        "Action"   : [
+            "Append data retrain validate",
+            "Retrain redeploy immediately",
+            "Review features retrain",
+            "Manual review targeted retrain"
+        ]
     })
     st.dataframe(schedule, use_container_width=True)
 
     st.divider()
     st.subheader("Model Health Summary")
     c1,c2,c3,c4 = st.columns(4)
-    c1.metric("Overall MAPE",  "4.03%",    "Below 8% alert")
-    c2.metric("WMAE",          "$35,357",  "Kaggle metric")
-    c3.metric("Max Drift",     "9.5%",     "Below 10% alert")
-    c4.metric("High Err Rate", "6.3%",     "Below 10% target")
+    c1.metric("Overall MAPE",  "4.03%",   "Below 8% alert")
+    c2.metric("WMAE",          "$35,357", "Kaggle metric")
+    c3.metric("Max Drift",     "9.5%",    "Below 10% alert")
+    c4.metric("High Err Rate", "6.3%",    "Below 10% target")
 
 elif page == "Step 7 Live Predictor":
-    st.title("Step 7 — Live Weekly Sales Predictor")
+    st.title("Step 7 Live Weekly Sales Predictor")
     st.caption("Enter store details to get an instant forecast")
     st.divider()
 
@@ -610,13 +608,13 @@ elif page == "Step 7 Live Predictor":
                 elif store_mape < 8:
                     st.warning("Moderate confidence prediction")
                 else:
-                    st.error("Low confidence — high error store")
+                    st.error("Low confidence high error store")
                 if holiday:
-                    st.info("Holiday week — elevated sales expected")
+                    st.info("Holiday week elevated sales expected")
                 if store in [39, 42]:
-                    st.warning("Under-prediction bias — consider adding 6% buffer")
+                    st.warning("Under-prediction bias consider adding 6% buffer")
                 if store == 44:
-                    st.warning("Over-prediction bias — consider reducing 4%")
+                    st.warning("Over-prediction bias consider reducing 4%")
 
             log_row = input_df.copy()
             log_row["prediction"]    = pred
@@ -632,12 +630,9 @@ elif page == "Step 7 Live Predictor":
             else:
                 log_df = log_row
             log_df.to_csv(log_file, index=False)
-            st.caption("Prediction logged — model version: LightGBM_V2")
+            st.caption("Prediction logged model version LightGBM_V2")
 
         except Exception as e:
             st.error(f"Prediction failed: {e}")
             if features is not None:
                 st.write("Expected features:", list(features))
-| Stores | 45 |
-
-**Project is done. Stop improving. Send Karun the message. Write LinkedIn post. Update CV.**
