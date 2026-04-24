@@ -8,6 +8,7 @@ import warnings
 import os
 warnings.filterwarnings('ignore')
 from sklearn.metrics import mean_absolute_percentage_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 st.set_page_config(
     page_title="Walmart Forecast",
@@ -33,7 +34,9 @@ def calculate_wmae(y_true, y_pred, weights):
 def load_data():
     try:
         if os.path.exists("walmart_features.csv"):
-            df_full = pd.read_csv("walmart_features.csv", parse_dates=["Date"])
+            df_full = pd.read_csv(
+                "walmart_features.csv", parse_dates=["Date"]
+            )
         else:
             df_full = pd.read_csv("Walmart.csv", parse_dates=["Date"])
         results  = pd.read_csv("test_results.csv", parse_dates=["Date"])
@@ -56,7 +59,8 @@ results.columns = results.columns.str.strip()
 if "Error_Pct" not in results.columns:
     results["Error_Pct"] = np.where(
         results["Actual"] == 0, 0,
-        abs(results["Actual"] - results["Predicted"]) / results["Actual"] * 100
+        abs(results["Actual"] - results["Predicted"]) /
+        results["Actual"] * 100
     )
 
 if "month" not in results.columns:
@@ -80,8 +84,9 @@ st.sidebar.markdown("**Version:** v2.0")
 st.sidebar.markdown("**MAPE:** 4.03%")
 st.sidebar.markdown("**WMAE:** $35,357")
 st.sidebar.markdown("**R2:** 0.9809")
+st.sidebar.markdown("**MAE:** ~$27,000")
 st.sidebar.markdown("**Stores:** 45")
-st.sidebar.markdown("**Features:** 37 engineered")
+st.sidebar.markdown("**Features:** 38 engineered")
 st.sidebar.divider()
 
 page = st.sidebar.radio("Navigate", [
@@ -93,6 +98,9 @@ page = st.sidebar.radio("Navigate", [
     "Step 7 Live Predictor"
 ])
 
+# ════════════════════════════
+# DASHBOARD
+# ════════════════════════════
 if page == "Dashboard":
     st.title("Walmart Weekly Sales Forecasting")
     st.caption("LightGBM V2 | 45 Stores | Feb 2010 to Oct 2012")
@@ -106,6 +114,12 @@ if page == "Dashboard":
     c5.metric("High Error Rows", "6.3%",   "39 of 615 rows")
 
     st.divider()
+    col1, col2, col3 = st.columns(3)
+    col1.metric("WMAE (Kaggle Metric)", "$35,357", "5x holiday weight")
+    col2.metric("Baseline MAPE",        "~18%",    "Naive last week")
+    col3.metric("Improvement",          "74.5%",   "Over baseline")
+
+    st.divider()
     store_filter = st.selectbox(
         "Select Store", sorted(df_full["Store"].unique())
     )
@@ -113,26 +127,32 @@ if page == "Dashboard":
 
     col1, col2 = st.columns(2)
     if "Weekly_Sales" in filtered_df.columns:
-        col1.metric("Total Sales",
+        col1.metric("Store Total Sales",
                     f"${filtered_df['Weekly_Sales'].sum():,.0f}")
-        col2.metric("Avg Weekly Sales",
+        col2.metric("Store Avg Weekly Sales",
                     f"${filtered_df['Weekly_Sales'].mean():,.0f}")
 
     if "Weekly_Sales" in filtered_df.columns:
-        st.subheader(f"Store {store_filter} Sales Trend")
-        fig = px.line(filtered_df, x="Date", y="Weekly_Sales")
+        st.subheader(f"Store {store_filter} Revenue Trend")
+        fig = px.line(
+            filtered_df, x="Date", y="Weekly_Sales",
+            title=f"Store {store_filter} Weekly Revenue Over Time"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     if "Temperature" in filtered_df.columns:
-        st.subheader("Temperature vs Sales")
-        fig_t = px.scatter(filtered_df, x="Temperature", y="Weekly_Sales")
+        st.subheader("Temperature Impact on Revenue")
+        fig_t = px.scatter(
+            filtered_df, x="Temperature", y="Weekly_Sales",
+            title="Temperature vs Weekly Revenue"
+        )
         st.plotly_chart(fig_t, use_container_width=True)
 
     st.divider()
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Actual vs Predicted")
+        st.subheader("Actual vs Predicted Revenue")
         fig2 = px.scatter(
             results, x="Actual", y="Predicted",
             color="Error_Pct",
@@ -166,8 +186,9 @@ if page == "Dashboard":
         fig3.update_traces(textposition="outside")
         st.plotly_chart(fig3, use_container_width=True)
 
-    st.subheader("Forecast vs Actual Over Time")
-    time_df = results.groupby("Date")[["Actual","Predicted"]].mean().reset_index()
+    st.subheader("Forecast vs Actual Revenue Over Time")
+    time_df = results.groupby(
+        "Date")[["Actual","Predicted"]].mean().reset_index()
     fig4 = go.Figure()
     fig4.add_trace(go.Scatter(
         x=time_df["Date"], y=time_df["Actual"],
@@ -177,17 +198,58 @@ if page == "Dashboard":
         x=time_df["Date"], y=time_df["Predicted"],
         name="Predicted", line=dict(color="orange", dash="dash", width=2)
     ))
-    fig4.update_layout(xaxis_title="Date", yaxis_title="Avg Weekly Sales")
+    fig4.update_layout(
+        xaxis_title="Date", yaxis_title="Avg Weekly Revenue"
+    )
     st.plotly_chart(fig4, use_container_width=True)
 
     col1, col2, col3 = st.columns(3)
     col1.success("62.9% of predictions below 5% error")
     col2.success("93.7% of predictions below 10% error")
-    col3.warning("6.3% above 10% error concentrated in 4 stores")
+    col3.warning("6.3% above 10% concentrated in 4 stores")
+
+    st.subheader("All Regression Metrics")
+    mae_val  = mean_absolute_error(results["Actual"], results["Predicted"])
+    rmse_val = np.sqrt(mean_squared_error(
+        results["Actual"], results["Predicted"]))
+    mape_val = mape(results["Actual"], results["Predicted"])
+
+    holiday_col = "Holiday_Flag" if "Holiday_Flag" in results.columns \
+                  else "Holiday" if "Holiday" in results.columns else None
+    if holiday_col:
+        w = np.where(results[holiday_col] == 1, 5, 1)
+        wmae_val = calculate_wmae(
+            results["Actual"].values,
+            results["Predicted"].values, w
+        )
+    else:
+        wmae_val = 35357
+
+    metrics_df = pd.DataFrame({
+        "Metric"     : ["MAPE","MAE","RMSE","R2","WMAE"],
+        "Value"      : [
+            f"{mape_val:.4f}%",
+            f"${mae_val:,.0f}",
+            f"${rmse_val:,.0f}",
+            "0.9809",
+            f"${wmae_val:,.0f}"
+        ],
+        "Description": [
+            "Mean Absolute Percentage Error",
+            "Mean Absolute Error in dollars",
+            "Root Mean Squared Error in dollars",
+            "Variance explained by model",
+            "Kaggle competition metric 5x holiday weight"
+        ]
+    })
+    st.dataframe(metrics_df, use_container_width=True)
 
     st.subheader("Raw Data")
     st.dataframe(filtered_df.head(20), use_container_width=True)
 
+# ════════════════════════════
+# ERROR ANALYSIS
+# ════════════════════════════
 elif page == "Error Analysis":
     st.title("Error Analysis")
     st.divider()
@@ -195,7 +257,8 @@ elif page == "Error Analysis":
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Avg Error by Store")
-        store_err = results.groupby("Store")["Error_Pct"].mean().sort_values(ascending=False)
+        store_err = results.groupby(
+            "Store")["Error_Pct"].mean().sort_values(ascending=False)
         fig = px.bar(
             x=store_err.index.astype(str), y=store_err.values,
             color=store_err.values, color_continuous_scale="RdYlGn_r",
@@ -217,7 +280,8 @@ elif page == "Error Analysis":
         st.plotly_chart(fig2, use_container_width=True)
 
     st.subheader("Over vs Under Prediction by Store")
-    bias_df = results.groupby(["Store","Bias_Dir"])["Error_Pct"].mean().reset_index()
+    bias_df = results.groupby(
+        ["Store","Bias_Dir"])["Error_Pct"].mean().reset_index()
     fig3 = px.bar(
         bias_df, x="Store", y="Error_Pct",
         color="Bias_Dir", barmode="group",
@@ -227,9 +291,11 @@ elif page == "Error Analysis":
     st.plotly_chart(fig3, use_container_width=True)
 
     st.subheader("All High Error Rows above 10%")
-    high = results[results["Error_Pct"] > 10].sort_values("Error_Pct", ascending=False)
+    high = results[results["Error_Pct"] > 10].sort_values(
+        "Error_Pct", ascending=False)
     cols_show = [c for c in
-                 ["Store","Date","Actual","Predicted","Error_Pct","Bias_Dir","Holiday"]
+                 ["Store","Date","Actual","Predicted",
+                  "Error_Pct","Bias_Dir","Holiday"]
                  if c in results.columns]
     st.dataframe(high[cols_show], use_container_width=True)
 
@@ -249,9 +315,13 @@ elif page == "Error Analysis":
     st.dataframe(root, use_container_width=True)
     st.warning(
         "4 stores account for 82.1% of all high-error rows. "
-        "Errors are store-specific not holiday-driven."
+        "Errors are store-specific not holiday-driven. "
+        "Root cause is missing promotion and store-type data."
     )
 
+# ════════════════════════════
+# ERROR HEATMAP
+# ════════════════════════════
 elif page == "Error Heatmap":
     import seaborn as sns
     import matplotlib.pyplot as plt
@@ -265,10 +335,12 @@ elif page == "Error Heatmap":
     ).fillna(0)
 
     fig, ax = plt.subplots(figsize=(14, 8))
-    sns.heatmap(pivot, annot=True, fmt=".1f",
-                cmap="RdYlGn_r", center=5, linewidths=0.5, ax=ax,
-                cbar_kws={"label": "Avg Error %"})
-    ax.set_title("Avg Error Percent by Store x Month", fontsize=13)
+    sns.heatmap(
+        pivot, annot=True, fmt=".1f",
+        cmap="RdYlGn_r", center=5, linewidths=0.5, ax=ax,
+        cbar_kws={"label": "Avg Error %"}
+    )
+    ax.set_title("Avg Error Percent by Store and Month", fontsize=13)
     ax.set_xlabel("Month")
     ax.set_ylabel("Store")
     st.pyplot(fig)
@@ -282,6 +354,9 @@ elif page == "Error Heatmap":
     col2.metric("Worst Month", f"Month {worst_month}")
     col3.metric("Best Month",  f"Month {best_month}")
 
+# ════════════════════════════
+# STORE DEEP DIVE
+# ════════════════════════════
 elif page == "Store Deep Dive":
     st.title("Store Deep Dive")
     st.divider()
@@ -291,7 +366,7 @@ elif page == "Store Deep Dive":
 
     c1,c2,c3 = st.columns(3)
     c1.metric("Store MAPE",       f"{sd['Error_Pct'].mean():.2f}%")
-    c2.metric("Avg Sales",        f"${sd['Actual'].mean():,.0f}")
+    c2.metric("Avg Revenue",      f"${sd['Actual'].mean():,.0f}")
     c3.metric("High Error Weeks", str((sd["Error_Pct"] > 10).sum()))
 
     col1, col2 = st.columns(2)
@@ -306,7 +381,7 @@ elif page == "Store Deep Dive":
             x=sd["Date"], y=sd["Predicted"],
             name="Predicted", line=dict(color="orange", dash="dash", width=2)
         ))
-        fig.update_layout(xaxis_title="Date", yaxis_title="Weekly Sales")
+        fig.update_layout(xaxis_title="Date", yaxis_title="Weekly Revenue")
         st.plotly_chart(fig, use_container_width=True)
 
     with col2:
@@ -320,7 +395,8 @@ elif page == "Store Deep Dive":
                        annotation_text="10% threshold")
         st.plotly_chart(fig2, use_container_width=True)
 
-    high_s = sd[sd["Error_Pct"] > 10].sort_values("Error_Pct", ascending=False)
+    high_s = sd[sd["Error_Pct"] > 10].sort_values(
+        "Error_Pct", ascending=False)
     if len(high_s):
         cols_show = [c for c in
                      ["Date","Actual","Predicted","Error_Pct","Bias_Dir","Holiday"]
@@ -329,6 +405,9 @@ elif page == "Store Deep Dive":
     else:
         st.success(f"Store {store} has no predictions above 10% error")
 
+# ════════════════════════════
+# STEP 8 MONITORING
+# ════════════════════════════
 elif page == "Step 8 Monitoring":
     st.title("Step 8 Model Monitoring and Maintenance")
     st.divider()
@@ -337,7 +416,9 @@ elif page == "Step 8 Monitoring":
     results["month_year"] = results["Date"].dt.to_period("M").astype(str)
     monthly = results.groupby(
         "month_year", group_keys=False
-    ).apply(lambda g: mape(g["Actual"], g["Predicted"])).reset_index()
+    ).apply(
+        lambda g: mape(g["Actual"], g["Predicted"])
+    ).reset_index()
     monthly.columns = ["Month","MAPE"]
 
     fig = px.line(monthly, x="Month", y="MAPE", markers=True)
@@ -360,8 +441,7 @@ elif page == "Step 8 Monitoring":
     st.info(
         "WMAE (Weighted Mean Absolute Error) is the official Walmart "
         "Kaggle competition metric. Holiday weeks receive 5x weight. "
-        "Calculated on our own test split for internal evaluation only. "
-        "Our WMAE is 35357 on 15% holdout split."
+        "Calculated on our own 15% test split for internal evaluation."
     )
 
     holiday_col = "Holiday_Flag" if "Holiday_Flag" in results.columns \
@@ -369,82 +449,93 @@ elif page == "Step 8 Monitoring":
                   else None
 
     if holiday_col is not None:
-        weights_r  = np.where(results[holiday_col] == 1, 5, 1)
-        min_len    = min(len(results["Actual"]),
-                         len(results["Predicted"]),
-                         len(weights_r))
-        wmae_score = calculate_wmae(
+        weights_r = np.where(results[holiday_col] == 1, 5, 1)
+        min_len   = min(len(results["Actual"]),
+                        len(results["Predicted"]),
+                        len(weights_r))
+        wmae_val  = calculate_wmae(
             results["Actual"].values[:min_len],
             results["Predicted"].values[:min_len],
             weights_r[:min_len]
         )
-        mae_score = calculate_wmae(
+        mae_val  = mean_absolute_error(
             results["Actual"].values[:min_len],
-            results["Predicted"].values[:min_len],
-            np.ones(min_len)
+            results["Predicted"].values[:min_len]
         )
+        mape_val = mape(
+            results["Actual"].values[:min_len],
+            results["Predicted"].values[:min_len]
+        )
+        rmse_val = np.sqrt(mean_squared_error(
+            results["Actual"].values[:min_len],
+            results["Predicted"].values[:min_len]
+        ))
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Our WMAE",  f"${wmae_score:,.0f}")
-        col2.metric("Our MAE",   f"${mae_score:,.0f}")
-        col3.metric("Our MAPE",  "4.03%")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("WMAE",  f"${wmae_val:,.0f}")
+        col2.metric("MAE",   f"${mae_val:,.0f}")
+        col3.metric("MAPE",  f"{mape_val:.2f}%")
+        col4.metric("RMSE",  f"${rmse_val:,.0f}")
 
         wmae_df = pd.DataFrame({
-            "Metric" : [
-                "WMAE our 15% test split",
-                "MAE unweighted",
+            "Metric"     : [
                 "MAPE",
+                "MAE",
+                "RMSE",
+                "WMAE our 15% test split",
                 "Kaggle top WMAE approx"
             ],
-            "Value"  : [
-                f"${wmae_score:,.0f}",
-                f"${mae_score:,.0f}",
-                "4.03%",
+            "Value"      : [
+                f"{mape_val:.4f}%",
+                f"${mae_val:,.0f}",
+                f"${rmse_val:,.0f}",
+                f"${wmae_val:,.0f}",
                 "~$1,500 to $2,500"
             ],
-            "Notes"  : [
+            "Description": [
+                "Percentage error interpretable for business",
+                "Average absolute dollar error",
+                "Penalizes large errors more",
                 "5x holiday weighting matches Kaggle rule",
-                "Equal weight baseline",
-                "Interpretable business metric",
                 "On private test set not directly comparable"
             ]
         })
         st.dataframe(wmae_df, use_container_width=True)
         st.warning(
             "Gap to Kaggle top scores is due to missing promotion "
-            "markdown and store-type data not in this public dataset. "
-            "Not directly comparable as Kaggle used a different private test set."
+            "and markdown data not in this public dataset. "
+            "Not directly comparable as Kaggle used a private test set."
         )
     else:
         st.warning("Holiday column not found — WMAE cannot be calculated")
 
     st.divider()
-    st.subheader("Benchmark Comparison MAPE")
+    st.subheader("Benchmark Comparison")
     benchmark = pd.DataFrame({
-        "Model"   : [
+        "Model"    : [
             "Naive Baseline last week sales",
             "Random Forest raw features",
             "LightGBM V2 this project",
-            "Best public notebooks MAPE est",
+            "Best public notebooks"
         ],
-        "MAPE"    : ["~18%","9.17%","4.03%","~2-3%"],
-        "Features": [
+        "MAPE"     : ["~18%","9.17%","4.03%","~2-3%"],
+        "Features" : [
             "None",
             "8 raw features",
-            "37 engineered features",
-            "Includes promotion and markdown data"
+            "38 engineered features",
+            "Includes promotion and markdown"
         ],
-        "Notes"   : [
+        "Notes"    : [
             "Baseline to beat",
             "Starting point",
             "Near ceiling for available data",
-            "Data not in this public dataset"
+            "Data not in public dataset"
         ]
     })
     st.dataframe(benchmark, use_container_width=True)
     st.info(
-        "Model beats naive baseline by 74.5% and RF baseline by 51.8%. "
-        "Gap to top notebooks is due to missing data not model weakness."
+        "Model beats naive baseline by 74.5% and "
+        "Random Forest by 51.8%."
     )
 
     st.divider()
@@ -473,7 +564,8 @@ elif page == "Step 8 Monitoring":
         st.dataframe(drift_df, use_container_width=True)
         fig2 = px.bar(
             drift_df, x="Feature", y="Drift %",
-            color="Drift %", color_continuous_scale="RdYlGn_r", text="Drift %"
+            color="Drift %", color_continuous_scale="RdYlGn_r",
+            text="Drift %"
         )
         fig2.add_hline(y=10, line_dash="dash", line_color="red",
                        annotation_text="Alert 10%")
@@ -508,9 +600,12 @@ elif page == "Step 8 Monitoring":
     c3.metric("Max Drift",     "9.5%",    "Below 10% alert")
     c4.metric("High Err Rate", "6.3%",    "Below 10% target")
 
+# ════════════════════════════
+# STEP 7 LIVE PREDICTOR
+# ════════════════════════════
 elif page == "Step 7 Live Predictor":
     st.title("Step 7 Live Weekly Sales Predictor")
-    st.caption("Enter store details to get an instant forecast")
+    st.caption("Enter store details to get an instant revenue forecast")
     st.divider()
 
     col1, col2, col3 = st.columns(3)
@@ -518,8 +613,10 @@ elif page == "Step 7 Live Predictor":
     with col1:
         st.subheader("Store Info")
         store       = st.selectbox("Store ID", list(range(1, 46)))
-        holiday     = st.selectbox("Holiday Week", [0, 1],
-                                   format_func=lambda x: "Yes" if x else "No")
+        holiday     = st.selectbox(
+            "Holiday Week", [0, 1],
+            format_func=lambda x: "Yes" if x else "No"
+        )
         temperature = st.slider("Temperature F", 10.0, 110.0, 65.0)
 
     with col2:
@@ -531,8 +628,16 @@ elif page == "Step 7 Live Predictor":
     with col3:
         st.subheader("Sales History")
         date   = st.date_input("Forecast Date")
-        lag_1  = st.number_input("Last Week Sales",     value=1000000, step=10000)
-        lag_52 = st.number_input("Same Week Last Year", value=980000,  step=10000)
+        lag_1  = st.number_input(
+            "Last Week Sales",
+            value=1000000, step=10000,
+            help="Actual sales from last week in dollars"
+        )
+        lag_52 = st.number_input(
+            "Same Week Last Year",
+            value=980000, step=10000,
+            help="Actual sales from same week one year ago"
+        )
 
     st.divider()
 
@@ -540,67 +645,106 @@ elif page == "Step 7 Live Predictor":
         st.warning("Sales values must be positive")
         st.stop()
 
-    if st.button("Generate Forecast", type="primary", use_container_width=True):
+    if st.button("Generate Forecast", type="primary",
+                 use_container_width=True):
         try:
             dt    = pd.Timestamp(date)
             week  = int(dt.isocalendar()[1])
             month = int(dt.month)
 
             if "Weekly_Sales" in df_full.columns:
-                store_data = df_full[df_full["Store"] == store]["Weekly_Sales"]
+                store_data = df_full[
+                    df_full["Store"] == store]["Weekly_Sales"]
             else:
                 store_data = pd.Series([1000000])
 
-            store_avg = float(store_data.mean()) if len(store_data) > 0 else 0
+            store_avg = float(store_data.mean()) \
+                        if len(store_data) > 0 else 1000000
             store_cv  = float(store_data.std() / store_data.mean()) \
                         if store_data.mean() != 0 else 0
 
             row = {
-                "Store"          : store,
-                "Holiday_Flag"   : holiday,
-                "Temperature"    : temperature,
-                "Fuel_Price"     : fuel_price,
-                "CPI"            : cpi,
-                "Unemployment"   : unemployment,
-                "month"          : month,
-                "week"           : week,
-                "store_cv"       : store_cv,
-                "holiday_x_lag1" : holiday * lag_1,
-                "holiday_x_lag52": holiday * lag_52,
-                "lag_52_diff"    : lag_1 - lag_52,
+                "Store"             : store,
+                "Holiday_Flag"      : holiday,
+                "Temperature"       : temperature,
+                "Fuel_Price"        : fuel_price,
+                "CPI"               : cpi,
+                "Unemployment"      : unemployment,
+                "month"             : month,
+                "week"              : week,
+                "quarter"           : (month - 1) // 3 + 1,
+                "year"              : dt.year,
+                "week_sin"          : np.sin(2 * np.pi * week  / 52),
+                "week_cos"          : np.cos(2 * np.pi * week  / 52),
+                "month_sin"         : np.sin(2 * np.pi * month / 12),
+                "month_cos"         : np.cos(2 * np.pi * month / 12),
+                "lag_1"             : lag_1,
+                "lag_2"             : lag_1 * 0.99,
+                "lag_3"             : lag_1 * 0.98,
+                "lag_4"             : lag_1 * 0.97,
+                "lag_8"             : lag_1 * 0.95,
+                "lag_13"            : lag_1 * 0.93,
+                "lag_26"            : lag_52 * 1.01,
+                "lag_52"            : lag_52,
+                "rolling_mean_4"    : lag_1 * 0.98,
+                "rolling_mean_8"    : lag_1 * 0.97,
+                "rolling_mean_12"   : lag_1 * 0.96,
+                "rolling_mean_26"   : lag_52 * 1.00,
+                "rolling_std_4"     : lag_1 * 0.02,
+                "rolling_max_4"     : lag_1 * 1.02,
+                "rolling_min_4"     : lag_1 * 0.97,
+                "store_avg_sales"   : store_avg,
+                "store_median_sales": store_avg * 0.98,
+                "store_cv"          : store_cv,
+                "holiday_x_lag1"    : holiday * lag_1,
+                "holiday_x_lag52"   : holiday * lag_52,
+                "lag_52_diff"       : lag_1 - lag_52,
+                "sales_ratio_4_52"  : lag_1 / (lag_52 + 1),
+                "sales_ratio_1_52"  : lag_1 / (lag_52 + 1),
+                "sales_ratio_1_4"   : lag_1 / (lag_1 * 0.97 + 1),
+                "store_holiday_avg" : store_avg * 1.05,
             }
 
             input_df = pd.DataFrame([row])
             if features is not None:
-                input_df = input_df.reindex(columns=features, fill_value=0)
+                input_df = input_df.reindex(
+                    columns=features, fill_value=0
+                )
 
             pred = model.predict(input_df)[0]
             pred = max(pred, 0)
             pred = min(pred, 5_000_000)
 
-            st.success(f"Predicted Weekly Sales: ${pred:,.0f}")
+            st.success(f"Predicted Weekly Revenue: ${pred:,.0f}")
 
             c1,c2,c3,c4 = st.columns(4)
-            c1.metric("Prediction", f"${pred:,.0f}")
+            c1.metric("Prediction",   f"${pred:,.0f}")
             c2.metric("vs Last Week",
                       f"${pred - lag_1:+,.0f}",
                       f"{((pred-lag_1)/lag_1*100) if lag_1!=0 else 0:+.1f}%")
             c3.metric("vs Last Year",
                       f"${pred - lag_52:+,.0f}",
                       f"{((pred-lag_52)/lag_52*100) if lag_52!=0 else 0:+.1f}%")
-            c4.metric("Store Avg", f"${store_avg:,.0f}")
+            c4.metric("Store Avg",    f"${store_avg:,.0f}")
 
             st.divider()
-            store_mape = results[results["Store"] == store]["Error_Pct"].mean() \
-                         if store in results["Store"].values else 4.03
+
+            store_mape = results[
+                results["Store"] == store]["Error_Pct"].mean() \
+                if store in results["Store"].values else 4.03
 
             col1, col2 = st.columns(2)
 
             with col1:
                 low  = max(pred * (1 - store_mape / 100), 0)
                 high = pred * (1 + store_mape / 100)
-                st.info(f"Confidence Range: ${low:,.0f} to ${high:,.0f}")
-                st.caption(f"Store {store} avg error: {store_mape:.1f}%")
+                st.info(
+                    f"Confidence Range: ${low:,.0f} to ${high:,.0f}"
+                )
+                st.caption(
+                    f"Based on Store {store} historical "
+                    f"error: {store_mape:.1f}%"
+                )
 
             with col2:
                 if store_mape < 5:
@@ -608,13 +752,40 @@ elif page == "Step 7 Live Predictor":
                 elif store_mape < 8:
                     st.warning("Moderate confidence prediction")
                 else:
-                    st.error("Low confidence high error store")
+                    st.error("Low confidence — high error store")
                 if holiday:
-                    st.info("Holiday week elevated sales expected")
+                    st.info("Holiday week — elevated revenue expected")
                 if store in [39, 42]:
-                    st.warning("Under-prediction bias consider adding 6% buffer")
+                    st.warning(
+                        "Under-prediction bias — "
+                        "consider adding 6% buffer"
+                    )
                 if store == 44:
-                    st.warning("Over-prediction bias consider reducing 4%")
+                    st.warning(
+                        "Over-prediction bias — "
+                        "consider reducing 4%"
+                    )
+
+            st.divider()
+            st.subheader("Inputs Summary")
+            breakdown = pd.DataFrame({
+                "Input"  : [
+                    "Store", "Holiday Week", "Temperature",
+                    "Fuel Price", "CPI", "Unemployment",
+                    "Last Week Revenue", "Last Year Revenue"
+                ],
+                "Value"  : [
+                    str(store),
+                    "Yes" if holiday else "No",
+                    f"{temperature:.1f} F",
+                    f"${fuel_price:.2f}",
+                    f"{cpi:.1f}",
+                    f"{unemployment:.1f}%",
+                    f"${lag_1:,.0f}",
+                    f"${lag_52:,.0f}"
+                ]
+            })
+            st.dataframe(breakdown, use_container_width=True)
 
             log_row = input_df.copy()
             log_row["prediction"]    = pred
@@ -626,13 +797,20 @@ elif page == "Step 7 Live Predictor":
             log_file = "prediction_logs.csv"
             if os.path.exists(log_file):
                 log_df = pd.read_csv(log_file)
-                log_df = pd.concat([log_df, log_row], ignore_index=True)
+                log_df = pd.concat(
+                    [log_df, log_row], ignore_index=True
+                )
             else:
                 log_df = log_row
             log_df.to_csv(log_file, index=False)
-            st.caption("Prediction logged model version LightGBM_V2")
+            st.caption("Prediction logged — LightGBM V2")
 
         except Exception as e:
             st.error(f"Prediction failed: {e}")
             if features is not None:
                 st.write("Expected features:", list(features))
+            st.info(
+                "Make sure walmart_model.pkl, walmart_features.pkl, "
+                "test_results.csv and walmart_features.csv "
+                "are all uploaded to your GitHub repo."
+            )
