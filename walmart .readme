@@ -1,0 +1,218 @@
+# Walmart Weekly Revenue Forecasting
+### High-Error Inventory Weeks Reduced From 18% to 7%
+
+[![Live](https://img.shields.io/badge/Live-Streamlit-red)](https://lnkd.in/dFTq7rts)
+[![Python](https://img.shields.io/badge/Python-3.9+-blue)]()
+[![LightGBM](https://img.shields.io/badge/Model-LightGBM-green)]()
+
+**Live:** https://lnkd.in/dFTq7rts
+
+---
+
+## The Real Problem
+
+**Question answered:**
+Can ML reduce high-error inventory decision
+weeks from 18% to under 10% across 45 stores
+— replacing Monday morning guessing with a
+quantified confidence range per store?
+
+At naive last-week forecasting:
+- Errors exceed 10% in 18% of weeks
+- Average error $79,126 per store weekly
+- Stockout or overstock risk every 5th week
+
+At our model:
+- Errors exceed 10% in 7% of weeks
+- Average error $38,661 per store weekly
+- Risk halved — every 14th week
+
+---
+
+## Stakeholders and Decisions
+
+| Stakeholder | Decision | Weekly stakes |
+|-------------|---------|---------------|
+| Store manager | Staff scheduling | $50K-$200K |
+| Supply chain | Inventory orders | $100K-$500K |
+| FP&A analyst | Budget vs actual | 45 reports |
+| Regional director | Store intervention | Monthly |
+
+---
+
+## Results
+
+| Metric | Value | Business meaning |
+|--------|-------|-----------------|
+| MAPE | 4.41% | Avg error per prediction |
+| MAE | $38,661 | Avg dollar error per store weekly |
+| RMSE | $55,603 | Large error penalised |
+| R² | 0.9819 | 98.2% variance explained |
+| WMAE | $39,104 | 5x holiday weighting |
+| High-error weeks | 7% | Down from 18% naive |
+| Stores improved | 45 of 45 | 100% |
+| Within 10% error | 92.8% | 570 of 615 |
+| Monitoring alerts | 0 of 21 | Production stable |
+
+---
+
+## Three Baselines — All From Actual Dataset
+
+No leaderboard — closed competition.
+Rule-based baselines only. No model training.
+
+| Baseline | MAPE | MAE | What it tells you |
+|----------|------|-----|------------------|
+| Store historical average | 7.47% | $79,480 | Sanity floor — even simple rules beat this |
+| Naive last-week | 7.15% | $79,126 | Does model capture weekly trend? |
+| Same week last year | 6.31% | $61,384 | Does model capture seasonality? Primary |
+| **LightGBM** | **4.41%** | **$38,661** | **Final model** |
+
+**Why same week last year is primary baseline:**
+Annual seasonality dominates retail forecasting.
+Thanksgiving 2012 mirrors Thanksgiving 2011.
+Confirmed by SHAP — lag_52 is strongest feature
+with up to $800K impact per prediction.
+
+**Why MAPE used for model selection (not RMSE):**
+Normality test confirmed non-normal right-skewed
+data. RMSE unfairly weights large-store errors
+10x more than small-store errors across 10x
+revenue range ($263K to $2.55M). MAPE treats
+all 45 stores equally — correct for this problem.
+
+**Improvement vs primary baseline:**
+MAPE 6.31% → 4.41% — 1.90pp
+MAE $61,384 → $38,661 — $22,723 per store weekly
+
+**Improvement vs naive:**
+MAPE 7.15% → 4.41% — 2.74pp
+MAE $79,126 → $38,661 — $40,465 per store weekly
+
+---
+
+## Business Impact — Decision Chain
+
+**Stockout and overstock risk:**
+
+| Baseline | MAPE | High-error weeks | Risk frequency |
+|----------|------|-----------------|----------------|
+| Naive last-week | 7.15% | ~18% | Every 5th week |
+| Same week last year | 6.31% | ~15% | Every 7th week |
+| LightGBM | 4.41% | ~7% | Every 14th week |
+
+**Dollar chain (assumptions stated):**
+Forecast error → inventory order error → cost
+- $79,126 → $38,661 per store weekly vs naive
+- $61,384 → $38,661 per store weekly vs primary
+- 45 stores × $40,465 = $1.82M chain-wide weekly
+- Assumption: forecast error = inventory order error
+- Actual depends on margin and safety stock policy
+
+**Store-specific decisions:**
+- Stores 39 and 42: under-predict 5-6% — add 6% buffer
+- Store 44 ($280K store): $15K absolute threshold
+- 41 of 45 stores: production ready immediately
+
+---
+
+## Does This Cover ML Fundamentals?
+
+| Fundamental | Implementation |
+|-------------|---------------|
+| Business problem definition | Revenue range, success criteria, stakeholders |
+| Data quality | 5 statistical tests, zero nulls confirmed |
+| EDA | Distribution, correlations, holiday analysis |
+| Feature engineering | 8 → 33 features, 95% of improvement |
+| Correct split strategy | Chronological — no data leakage |
+| Model selection | 4 algorithms compared, metric-justified |
+| All regression metrics | MAPE, MAE, RMSE, R², WMAE |
+| Explainability | SHAP for every prediction |
+| Error analysis | Root cause per store |
+| Deployment | Live Streamlit dashboard |
+| Monitoring | Monthly MAPE, drift detection |
+| Human decisions | 6 documented with reasoning |
+
+---
+
+## 8-Step ML Roadmap
+
+### Step 1 — Business Problem
+- 45 stores, $263K to $2.55M — 10x spread
+- MAPE below 5%, R² above 0.95
+- Dataset: closed Kaggle competition
+- Baselines: three rule-based, no leaderboard
+
+### Step 2 — Data and EDA
+- 6,435 rows, zero nulls, zero duplicates
+- 5 statistical tests before any modelling
+- Key finding: Christmas week BELOW average
+  (December 28th = post-Christmas decline)
+
+### Step 3 — Feature Engineering
+- 8 raw → 33 features
+- 95% of improvement from this step
+- lag_52 = #1 SHAP, $800K impact
+- Cyclic encoding, holiday interactions
+
+### Step 4 — Split
+- Chronological 70/15/15
+- Random split rejected — data leakage
+
+### Step 5 — Model Selection
+- 4 models compared: DT, RF, XGB, LightGBM
+- MAPE used for selection — non-normal data,
+  10x store size range, RMSE unfair
+- LightGBM selected
+
+### Step 6 — Evaluation
+- MAPE, MAE, RMSE, R², WMAE calculated
+- Three baselines compared
+- SHAP explainability implemented
+- 100% of 45 stores improved
+- All high-error predictions documented
+
+### Step 7 — Deployment
+- 6-page live Streamlit dashboard
+- Real-time prediction with confidence ranges
+- Store bias warnings, prediction logging
+
+### Step 8 — Monitoring
+- 0 of 21 months triggered 8% alert
+- Drift detection — 4 economic variables
+- 4 retraining triggers defined
+
+---
+
+## Human Decision Log
+
+| Decision | Standard | Mine | Why |
+|----------|----------|------|-----|
+| Outliers | Remove | Keep | Real holiday peaks |
+| Metric | RMSE | MAPE | Non-normal, 10x range |
+| Split | Random | Chronological | No leakage |
+| Model selection | RMSE | MAPE | Fair across stores |
+| Fuel_Price | Remove | Keep | SHAP 6th feature |
+| Christmas | Peak | Decline | Post-holiday drop |
+| Encoding | Raw week | Cyclic | Week 52 and 1 adjacent |
+
+---
+
+## Tech Stack
+Python | LightGBM | SHAP | Streamlit | Plotly |
+Scipy | Scikit-learn | Pandas | NumPy
+
+## Files
+
+| File | Description |
+|------|-------------|
+| app.py | 6-page dashboard |
+| walmart_model.pkl | Trained LightGBM |
+| walmart_features.pkl | 33 features |
+| test_results.csv | 615 predictions |
+| walmart_features.csv | Engineered dataset |
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
